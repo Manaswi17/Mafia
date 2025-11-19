@@ -114,15 +114,26 @@ The app will open at `http://localhost:3000`
 ### Game Flow
 
 1. **Lobby**: Players join room, God starts game
-2. **Night**: Mafia kills, Doctor protects, Police investigates, Terrorist can bomb
-3. **Day**: Discussion phase
-4. **Voting**: All players vote to eliminate someone
-5. **Repeat** until Mafia or Citizens win
+2. **Round Start**: Splash screen showing current round number
+3. **Night**: Mafia kills, Doctor protects, Police investigates, Terrorist can bomb
+4. **Day**: Discussion phase
+5. **Voting**: All players vote to eliminate someone (ties eliminate all tied players)
+6. **Round End**: Check win conditions
+7. **Repeat rounds** until Mafia or Citizens win
 
 ### Win Conditions
 
 - **Citizens Win**: All Mafia eliminated
 - **Mafia Wins**: Mafia count >= Citizen count
+
+### New Features
+
+- **Round System**: Games now have multiple rounds with round numbering
+- **Action Confirmations**: Players see "Action submitted. Waiting for God to confirm." for night actions
+- **Doctor Notifications**: Doctor receives feedback on whether their protection was successful
+- **Voting Improvements**: God cannot be voted out, ties eliminate all tied players
+- **Dead Player Screen**: Dead players see a special screen and cannot participate
+- **Round Splash Screen**: Shows round number before each round begins
 
 ## Role Assignment Logic
 

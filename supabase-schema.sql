@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS games (
   phase TEXT NOT NULL DEFAULT 'lobby',
   created_by TEXT NOT NULL,
   started_at TIMESTAMP,
+  current_round INTEGER DEFAULT 1,
+  winner_team TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -31,6 +33,7 @@ CREATE TABLE IF NOT EXISTS actions (
   action_type TEXT NOT NULL,
   target_player_id TEXT,
   phase TEXT NOT NULL,
+  round_number INTEGER DEFAULT 1,
   confirmed BOOLEAN DEFAULT false,
   created_at TIMESTAMP DEFAULT NOW()
 );

@@ -28,6 +28,7 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
         .eq('room_id', roomId)
         .eq('phase', gameState.phase)
         .eq('confirmed', false)
+        .filter('round_number', 'eq', gameState.current_round || 1)
         .order('created_at', { ascending: true })
 
       if (data) {
@@ -47,6 +48,7 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
         .select('*')
         .eq('room_id', roomId)
         .eq('phase', GAME_PHASES.VOTING)
+        .filter('round_number', 'eq', gameState.current_round || 1)
         .order('created_at', { ascending: true })
 
       if (data) {
@@ -107,6 +109,7 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
         .eq('room_id', roomId)
         .eq('phase', gameState.phase)
         .eq('confirmed', false)
+        .filter('round_number', 'eq', gameState.current_round || 1)
         .order('created_at', { ascending: true })
       
       if (data) {
@@ -121,30 +124,51 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
   }
 
   async function nextPhase() {
-    const phases = [GAME_PHASES.NIGHT, GAME_PHASES.DAY, GAME_PHASES.VOTING]
-    const currentIndex = phases.indexOf(gameState.phase)
+    let nextPhase
+    let updateData = {}
     
-    if (currentIndex === -1) return
-
-    let nextPhase = phases[(currentIndex + 1) % phases.length]
-
-    // Check win conditions before moving to next phase
+    // Check win conditions first
     const alivePlayers = players.filter(p => p.is_alive)
     const mafiaCount = alivePlayers.filter(p => p.role === ROLES.MAFIA).length
     const citizenCount = alivePlayers.filter(p => 
-      [ROLES.CITIZEN, ROLES.DOCTOR, ROLES.POLICE].includes(p.role)
+      [ROLES.CITIZEN, ROLES.DOCTOR, ROLES.POLICE, ROLES.TERRORIST].includes(p.role)
     ).length
 
     if (mafiaCount === 0) {
       nextPhase = GAME_PHASES.ENDED
+      updateData.winner_team = 'citizens'
     } else if (mafiaCount >= citizenCount) {
       nextPhase = GAME_PHASES.ENDED
+      updateData.winner_team = 'mafia'
+    } else {
+      // Continue with normal phase progression
+      if (gameState.phase === GAME_PHASES.NIGHT) {
+        nextPhase = GAME_PHASES.DAY
+      } else if (gameState.phase === GAME_PHASES.DAY) {
+        nextPhase = GAME_PHASES.VOTING
+      } else if (gameState.phase === GAME_PHASES.VOTING) {
+        // Continue to next round
+        nextPhase = GAME_PHASES.NIGHT
+        updateData.current_round = (gameState.current_round || 1) + 1
+      } else {
+        return
+      }
     }
 
-    await supabase
-      .from('games')
-      .update({ phase: nextPhase })
-      .eq('id', roomId)
+    updateData.phase = nextPhase
+
+    try {
+      await supabase
+        .from('games')
+        .update(updateData)
+        .eq('id', roomId)
+    } catch (error) {
+      // Fallback for databases without new columns
+      await supabase
+        .from('games')
+        .update({ phase: nextPhase })
+        .eq('id', roomId)
+    }
 
     // Process confirmed actions when moving from night to day
     if (gameState.phase === GAME_PHASES.NIGHT && nextPhase === GAME_PHASES.DAY) {
@@ -154,8 +178,8 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
       }
     }
 
-    // Process voting when moving from voting to day
-    if (gameState.phase === GAME_PHASES.VOTING && nextPhase === GAME_PHASES.DAY) {
+    // Process voting when moving from voting phase
+    if (gameState.phase === GAME_PHASES.VOTING && nextPhase !== GAME_PHASES.ENDED) {
       const result = await processVoting()
       if (result?.narration) {
         setNarration(result.narration)
@@ -170,6 +194,7 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
       .eq('room_id', roomId)
       .eq('phase', GAME_PHASES.NIGHT)
       .eq('confirmed', true)
+      .filter('round_number', 'eq', gameState.current_round || 1)
 
     if (!confirmedActions) return { narration: null }
 
@@ -194,7 +219,7 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
         narrationLines.push(`🛡️ ${doctor?.name || 'Doctor'} protected ${target?.name || 'target'} from the Mafia's attack!`)
         protectedPlayers.push(target?.name)
       } else {
-        narrationLines.push(`🔪 ${mafiaPlayer?.name || 'Mafia'} attempted to kill ${target?.name || 'target'}.`)
+        narrationLines.push(`🔪 The Mafia killed ${target?.name || 'target'}.`)
         await supabase
           .from('players')
           .update({ is_alive: false })
@@ -268,6 +293,7 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
       .eq('room_id', roomId)
       .eq('phase', GAME_PHASES.VOTING)
       .eq('confirmed', true)
+      .filter('round_number', 'eq', gameState.current_round || 1)
 
     if (!votes || votes.length === 0) return { narration: null }
 
@@ -288,33 +314,41 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
       narrationLines.push(`  ${player?.name || 'Unknown'}: ${voteCounts[playerId]} vote(s)`)
     })
 
-    // Find player with most votes
+    // Find players with most votes (eliminate all tied players)
     let maxVotes = 0
-    let eliminatedPlayer = null
+    let eliminatedPlayers = []
 
     Object.keys(voteCounts).forEach(playerId => {
       if (voteCounts[playerId] > maxVotes) {
         maxVotes = voteCounts[playerId]
-        eliminatedPlayer = playerId
+        eliminatedPlayers = [playerId]
+      } else if (voteCounts[playerId] === maxVotes && maxVotes > 0) {
+        eliminatedPlayers.push(playerId)
       }
     })
 
-    if (eliminatedPlayer && maxVotes > 0) {
-      const eliminated = players.find(p => p.player_id === eliminatedPlayer)
-      const eliminatedRole = eliminated?.role
-      narrationLines.push('')
-      narrationLines.push(`⚰️ ${eliminated?.name || 'Player'} was eliminated by vote!`)
-      narrationLines.push(`   Role: ${getRoleDisplayName(eliminatedRole)}`)
+    if (eliminatedPlayers.length > 0 && maxVotes > 0) {
+      if (eliminatedPlayers.length > 1) {
+        narrationLines.push(`⚖️ Multiple players tied with ${maxVotes} vote(s). All tied players are eliminated!`)
+      }
       
-      // Allow voting out God - update their status
+      narrationLines.push('')
+      eliminatedPlayers.forEach(playerId => {
+        const eliminated = players.find(p => p.player_id === playerId)
+        const eliminatedRole = eliminated?.role
+        narrationLines.push(`⚰️ ${eliminated?.name || 'Player'} was eliminated by vote!`)
+        narrationLines.push(`   Role: ${getRoleDisplayName(eliminatedRole)}`)
+      })
+      
+      // Update all tied players status to dead
       await supabase
         .from('players')
         .update({ is_alive: false })
-        .eq('player_id', eliminatedPlayer)
+        .in('player_id', eliminatedPlayers)
         .eq('room_id', roomId)
     } else {
       narrationLines.push('')
-      narrationLines.push('No one was eliminated (tie or no votes).')
+      narrationLines.push('No one was eliminated (no votes cast).')
     }
 
     // Get updated player status
@@ -370,6 +404,8 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
         .from('games')
         .update({ 
           phase: GAME_PHASES.LOBBY,
+          current_round: 1,
+          winner_team: null,
           started_at: null
         })
         .eq('id', roomId)
@@ -419,6 +455,7 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
         .from('games')
         .update({ 
           phase: GAME_PHASES.NIGHT,
+          current_round: 1,
           started_at: new Date().toISOString()
         })
         .eq('id', roomId)
@@ -450,7 +487,10 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
             <h1 className="text-2xl md:text-3xl font-bold mb-2">God Dashboard</h1>
             <p className="text-gray-400">Room: {roomId}</p>
             <p className="text-lg font-semibold mt-2">
-              Phase: <span className="text-yellow-400">{gameState.phase.toUpperCase()}</span>
+              Round: <span className="text-blue-400">{gameState.current_round || 1}</span>
+            </p>
+            <p className="text-lg font-semibold">
+              Phase: <span className="text-yellow-400">{gameState.phase.toUpperCase().replace('_', ' ')}</span>
             </p>
           </div>
           <button
@@ -660,22 +700,21 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
       {gameState.phase === GAME_PHASES.ENDED && (
         <div className="mt-4 bg-gray-800 rounded-lg p-4 md:p-6 shadow-lg">
           <h2 className="text-xl font-semibold mb-4">Game Ended</h2>
-          <div className="text-lg">
-            {(() => {
-              const mafiaCount = alivePlayers.filter(p => p.role === ROLES.MAFIA).length
-              const citizenCount = alivePlayers.filter(p => 
-                [ROLES.CITIZEN, ROLES.DOCTOR, ROLES.POLICE].includes(p.role)
-              ).length
-              
-              if (mafiaCount === 0) {
-                return <span className="text-blue-400">Citizens Win!</span>
-              } else {
-                return <span className="text-red-400">Mafia Wins!</span>
-              }
-            })()}
+          <div className="text-lg mb-4">
+            {gameState.winner_team === 'citizens' && (
+              <span className="text-blue-400">🎉 Citizens Win!</span>
+            )}
+            {gameState.winner_team === 'mafia' && (
+              <span className="text-red-400">🎉 Mafia Wins!</span>
+            )}
+          </div>
+          <div className="text-sm text-gray-400">
+            Game lasted {gameState.current_round || 1} round(s)
           </div>
         </div>
       )}
+
+
     </div>
   )
 }

@@ -5,9 +5,11 @@
 
 export const GAME_PHASES = {
   LOBBY: 'lobby',
+  ROUND_START: 'round_start',
   NIGHT: 'night',
   DAY: 'day',
   VOTING: 'voting',
+  ROUND_END: 'round_end',
   ENDED: 'ended'
 }
 

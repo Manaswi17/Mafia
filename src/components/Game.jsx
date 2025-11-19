@@ -4,6 +4,7 @@ import { ROLES, getRoleDisplayName } from '../utils/roleAssignment'
 import { GAME_PHASES } from '../utils/gamePhases'
 import GodDashboard from './GodDashboard'
 import PlayerView from './PlayerView'
+import RoundStart from './RoundStart'
 
 export default function Game({ playerId, roomId, gameState, onLeaveRoom }) {
   const [player, setPlayer] = useState(null)
@@ -115,6 +116,35 @@ export default function Game({ playerId, roomId, gameState, onLeaveRoom }) {
         <div className="text-xl">Loading game...</div>
       </div>
     )
+  }
+
+  // Show round start splash screen (only if round system is available)
+  if (gameState.phase === GAME_PHASES.ROUND_START) {
+    if (player.role === ROLES.GOD) {
+      return (
+        <>
+          <GodDashboard
+            playerId={playerId}
+            roomId={roomId}
+            gameState={gameState}
+            players={players}
+            actions={actions}
+            onLeaveRoom={onLeaveRoom}
+          />
+          <RoundStart 
+            roundNumber={gameState.current_round || 1}
+            onContinue={() => {}} // God controls phase transitions
+          />
+        </>
+      )
+    } else {
+      return (
+        <RoundStart 
+          roundNumber={gameState.current_round || 1}
+          onContinue={() => {}} // Only God can advance
+        />
+      )
+    }
   }
 
   // God sees special dashboard

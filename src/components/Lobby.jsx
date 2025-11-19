@@ -234,13 +234,25 @@ export default function Lobby({ playerId, onJoinRoom, currentRoomId }) {
       }
 
       // Start game
-      await supabase
-        .from('games')
-        .update({ 
-          phase: GAME_PHASES.NIGHT,
-          started_at: new Date().toISOString()
-        })
-        .eq('id', currentRoomId)
+      try {
+        await supabase
+          .from('games')
+          .update({ 
+            phase: GAME_PHASES.NIGHT,
+            current_round: 1,
+            started_at: new Date().toISOString()
+          })
+          .eq('id', currentRoomId)
+      } catch (error) {
+        // Fallback for databases without new columns
+        await supabase
+          .from('games')
+          .update({ 
+            phase: GAME_PHASES.NIGHT,
+            started_at: new Date().toISOString()
+          })
+          .eq('id', currentRoomId)
+      }
 
     } catch (err) {
       setError(err.message)
