@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { ROLES, getRoleDisplayName, getTeam } from '../utils/roleAssignment'
 import { GAME_PHASES } from '../utils/gamePhases'
+import { canAdvancePhase, getMissingActions } from '../utils/phaseControl'
+import { canGodAdvancePhase, getConfirmationErrorMessage } from '../utils/godConfirmation'
 
 export default function GodDashboard({ playerId, roomId, gameState, players, actions, onLeaveRoom }) {
   const [pendingActions, setPendingActions] = useState([])
@@ -124,6 +126,19 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
   }
 
   async function nextPhase() {
+    // Check if all actions are confirmed first
+    const currentPhaseActions = actions.filter(a => 
+      a.phase === gameState.phase && 
+      (a.round_number || 1) === (gameState.current_round || 1)
+    )
+    
+    if (!canGodAdvancePhase(currentPhaseActions, gameState.phase)) {
+      const errorMsg = getConfirmationErrorMessage(currentPhaseActions, gameState.phase)
+      setError(errorMsg)
+      setTimeout(() => setError(''), 5000)
+      return
+    }
+    
     let nextPhase
     let updateData = {}
     
@@ -136,7 +151,7 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
 
     if (mafiaCount === 0) {
       nextPhase = GAME_PHASES.ENDED
-      updateData.winner_team = 'citizens'
+      updateData.winner_team = 'citizen'
     } else if (mafiaCount >= citizenCount) {
       nextPhase = GAME_PHASES.ENDED
       updateData.winner_team = 'mafia'
@@ -517,17 +532,11 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
           <button
             onClick={nextPhase}
             className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded font-semibold"
-            disabled={gameState.phase === GAME_PHASES.ENDED || loading}
+            disabled={gameState.phase === GAME_PHASES.ENDED || loading || !canAdvancePhase(players, actions, gameState.phase)}
           >
-            Next Phase
+            {canAdvancePhase(players, actions, gameState.phase) ? 'Next Phase' : 'Waiting for Actions'}
           </button>
-          <button
-            onClick={restartGame}
-            className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded font-semibold"
-            disabled={gameState.phase === GAME_PHASES.LOBBY || loading}
-          >
-            {loading ? 'Restarting...' : 'Restart Game'}
-          </button>
+
           <button
             onClick={resetGame}
             className="px-6 py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded font-semibold"
@@ -701,7 +710,7 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
         <div className="mt-4 bg-gray-800 rounded-lg p-4 md:p-6 shadow-lg">
           <h2 className="text-xl font-semibold mb-4">Game Ended</h2>
           <div className="text-lg mb-4">
-            {gameState.winner_team === 'citizens' && (
+            {gameState.winner_team === 'citizen' && (
               <span className="text-blue-400">🎉 Citizens Win!</span>
             )}
             {gameState.winner_team === 'mafia' && (

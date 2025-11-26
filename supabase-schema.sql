@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS players (
   role TEXT,
   is_alive BOOLEAN DEFAULT true,
   has_acted BOOLEAN DEFAULT false,
+  self_protected BOOLEAN DEFAULT false,
+  terrorist_used BOOLEAN DEFAULT false,
   created_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(player_id, room_id)
 );

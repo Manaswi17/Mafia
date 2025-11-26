@@ -5,6 +5,8 @@ import { GAME_PHASES } from '../utils/gamePhases'
 import GodDashboard from './GodDashboard'
 import PlayerView from './PlayerView'
 import RoundStart from './RoundStart'
+import GameEnd from './GameEnd'
+import PlayerGameEnd from './PlayerGameEnd'
 
 export default function Game({ playerId, roomId, gameState, onLeaveRoom }) {
   const [player, setPlayer] = useState(null)
@@ -116,6 +118,31 @@ export default function Game({ playerId, roomId, gameState, onLeaveRoom }) {
         <div className="text-xl">Loading game...</div>
       </div>
     )
+  }
+
+  // Show game end screen when game is finished
+  if (gameState.phase === GAME_PHASES.ENDED) {
+    if (player.role === ROLES.GOD) {
+      return (
+        <GameEnd
+          gameState={gameState}
+          players={players}
+          currentPlayer={player}
+          onNewGame={() => window.location.reload()}
+          onLeaveRoom={onLeaveRoom}
+        />
+      )
+    } else {
+      return (
+        <PlayerGameEnd
+          gameState={gameState}
+          players={players}
+          currentPlayer={player}
+          onNewGame={() => window.location.reload()}
+          onLeaveRoom={onLeaveRoom}
+        />
+      )
+    }
   }
 
   // Show round start splash screen (only if round system is available)

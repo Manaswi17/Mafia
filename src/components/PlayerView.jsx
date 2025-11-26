@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { ROLES, getRoleDisplayName, getTeam } from '../utils/roleAssignment'
 import { GAME_PHASES, canRoleAct } from '../utils/gamePhases'
+import { canPlayerAct, getPlayerActionStatus } from '../utils/buttonState'
 
 export default function PlayerView({ player, roomId, gameState, players, actions, onLeaveRoom }) {
   const [selectedTarget, setSelectedTarget] = useState(null)
   const [hasActed, setHasActed] = useState(false)
   const [doctorSelfProtectUsed, setDoctorSelfProtectUsed] = useState(false)
   const [terroristActed, setTerroristActed] = useState(false)
+  const [actionStatus, setActionStatus] = useState({ canAct: true, message: null, buttonText: 'Submit' })
 
   useEffect(() => {
     // Reset selected target when phase changes
@@ -23,6 +25,15 @@ export default function PlayerView({ player, roomId, gameState, players, actions
            (a.confirmed === true || gameState.phase === GAME_PHASES.VOTING) // Votes are auto-confirmed
     )
     setHasActed(phaseActions.length > 0)
+    
+    // Update action status for button disabling
+    const status = getPlayerActionStatus(
+      player.player_id, 
+      actions, 
+      gameState.phase, 
+      gameState.current_round || 1
+    )
+    setActionStatus(status)
 
     // Check doctor self-protect usage (once per game)
     const selfProtect = actions.find(
@@ -135,10 +146,10 @@ export default function PlayerView({ player, roomId, gameState, players, actions
         return (
           <button
             onClick={() => submitAction('mafia_kill')}
-            disabled={!canAct || !selectedTarget}
+            disabled={!actionStatus.canAct || !selectedTarget}
             className="w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed px-6 py-3 rounded font-semibold"
           >
-            Kill Target
+            {actionStatus.canAct ? 'Kill Target' : 'Submitted'}
           </button>
         )
       }
@@ -146,10 +157,10 @@ export default function PlayerView({ player, roomId, gameState, players, actions
         return (
           <button
             onClick={() => submitAction('doctor_protect')}
-            disabled={!canAct || !selectedTarget}
+            disabled={!actionStatus.canAct || !selectedTarget}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed px-6 py-3 rounded font-semibold"
           >
-            Protect Target
+            {actionStatus.canAct ? 'Protect Target' : 'Submitted'}
           </button>
         )
       }
@@ -157,10 +168,10 @@ export default function PlayerView({ player, roomId, gameState, players, actions
         return (
           <button
             onClick={() => submitAction('police_investigate')}
-            disabled={!canAct}
+            disabled={!actionStatus.canAct}
             className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed px-6 py-3 rounded font-semibold"
           >
-            Investigate Target
+            {actionStatus.canAct ? 'Investigate Target' : 'Submitted'}
           </button>
         )
       }
@@ -168,10 +179,10 @@ export default function PlayerView({ player, roomId, gameState, players, actions
         return (
           <button
             onClick={() => submitAction('terrorist_bomb')}
-            disabled={!canAct || !selectedTarget}
+            disabled={!actionStatus.canAct || !selectedTarget}
             className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed px-6 py-3 rounded font-semibold"
           >
-            Bomb Target (One Time)
+            {actionStatus.canAct ? 'Bomb Target (One Time)' : 'Submitted'}
           </button>
         )
       }
@@ -413,6 +424,12 @@ export default function PlayerView({ player, roomId, gameState, players, actions
         {hasActed && gameState.phase === GAME_PHASES.VOTING && (
           <div className="mb-4 p-3 bg-green-900 rounded text-green-200">
             Vote submitted!
+          </div>
+        )}
+        
+        {!actionStatus.canAct && actionStatus.message && (
+          <div className="mb-4 p-3 bg-yellow-900 rounded text-yellow-200">
+            {actionStatus.message}
           </div>
         )}
 

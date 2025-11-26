@@ -19,67 +19,29 @@ export const ROLES = {
  * @returns {Object} Role distribution object
  */
 export function calculateRoleDistribution(totalPlayers) {
+  if (totalPlayers < 6) {
+    throw new Error('Need at least 6 players to start')
+  }
+  
   // God is separate, so we work with remaining players
   const playersWithoutGod = totalPlayers - 1
   
-  // Base distribution rules:
-  // - 1 Doctor (counted as Citizen)
-  // - 1 Police (counted as Citizen)
-  // - 1 Terrorist
-  // - Remaining: Mafia vs Citizens (including Doctor/Police)
+  // Fixed roles: 1 Doctor, 1 Police, 1 Terrorist
+  const fixedRoles = 3
+  const remainingPlayers = playersWithoutGod - fixedRoles
   
-  // Typical ratio: ~30% Mafia, ~70% Citizens (including special roles)
-  // Minimum 1 Mafia, minimum 2 Citizens (Doctor + Police minimum)
+  // Calculate Mafia count (~30% of total non-god players, minimum 1)
+  const mafiaCount = Math.max(1, Math.floor(playersWithoutGod * 0.3))
+  const citizenCount = playersWithoutGod - mafiaCount - 1 - 1 - 1 // -1 for each fixed role
   
-  let mafiaCount = 1
-  let citizenCount = 2 // Doctor + Police minimum
-  
-  if (playersWithoutGod === 5) {
-    // For exactly 6 players (5 + 1 God): 1 Mafia, 1 Citizen, 1 Doctor, 1 Police, 1 Terrorist
-    mafiaCount = 1
-    citizenCount = 1 // Regular citizen (Doctor and Police are added separately)
-  } else if (playersWithoutGod >= 6) {
-    // For 7+ players: ~30% Mafia
-    mafiaCount = Math.max(1, Math.floor(playersWithoutGod * 0.3))
-    citizenCount = playersWithoutGod - mafiaCount - 1 // -1 for Terrorist
-    // Ensure we have at least 2 regular citizens for Doctor and Police slots
-    if (citizenCount < 2) {
-      citizenCount = 2
-    }
-  } else {
-    // Less than 6 players not allowed (this shouldn't happen due to check in assignRoles)
-    mafiaCount = 1
-    citizenCount = 1
-  }
-  
-  // For exactly 6 players, we have exact distribution
-  if (playersWithoutGod === 5) {
-    return {
-      mafia: 1,
-      citizen: 1, // Regular citizen (Doctor and Police are separate)
-      doctor: 1,
-      police: 1,
-      terrorist: 1,
-      god: 1
-    }
-  }
-  
-  // Adjust if total doesn't match (for 7+ players)
-  const total = mafiaCount + citizenCount + 1 // +1 for Terrorist
-  if (total !== playersWithoutGod) {
-    const diff = playersWithoutGod - total
-    if (diff > 0) {
-      // Add extra to citizens
-      citizenCount += diff
-    } else {
-      // Remove from citizens if needed, but keep at least 2 for Doctor and Police
-      citizenCount = Math.max(2, citizenCount + diff)
-    }
+  // Ensure we have at least some citizens
+  if (citizenCount < 0) {
+    throw new Error('Not enough players for proper distribution')
   }
   
   return {
     mafia: mafiaCount,
-    citizen: citizenCount - 2, // Exclude Doctor and Police (they're added separately)
+    citizen: citizenCount,
     doctor: 1,
     police: 1,
     terrorist: 1,
@@ -97,6 +59,11 @@ export function assignRoles(playerIds) {
     throw new Error('Need at least 6 players to start')
   }
   
+  // Validate player IDs
+  if (playerIds.some(id => id == null || id === undefined)) {
+    throw new Error('Invalid player IDs: null or undefined values not allowed')
+  }
+  
   const distribution = calculateRoleDistribution(playerIds.length)
   const roles = []
   
@@ -111,24 +78,24 @@ export function assignRoles(playerIds) {
   roles.push(ROLES.POLICE)
   roles.push(ROLES.TERRORIST)
   
-  // Randomly select one player to be God
-  const godIndex = Math.floor(Math.random() * playerIds.length)
-  const godId = playerIds[godIndex]
+  // Validate total roles match expected count
+  if (roles.length !== playerIds.length - 1) {
+    throw new Error('Role count mismatch')
+  }
   
-  // Shuffle remaining roles
-  const shuffledRoles = roles.sort(() => Math.random() - 0.5)
+  // Randomly select one player to be God
+  const shuffledPlayerIds = [...playerIds].sort(() => Math.random() - 0.5)
+  const godId = shuffledPlayerIds[0]
+  const nonGodPlayers = shuffledPlayerIds.slice(1)
+  
+  // Shuffle roles
+  const shuffledRoles = [...roles].sort(() => Math.random() - 0.5)
   
   // Assign roles
-  const assignments = {}
-  let roleIndex = 0
+  const assignments = { [godId]: ROLES.GOD }
   
-  playerIds.forEach((playerId, index) => {
-    if (index === godIndex) {
-      assignments[playerId] = ROLES.GOD
-    } else {
-      assignments[playerId] = shuffledRoles[roleIndex]
-      roleIndex++
-    }
+  nonGodPlayers.forEach((playerId, index) => {
+    assignments[playerId] = shuffledRoles[index]
   })
   
   return assignments
