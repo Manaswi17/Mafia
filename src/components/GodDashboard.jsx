@@ -142,32 +142,16 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
     let nextPhase
     let updateData = {}
     
-    // Check win conditions first
-    const alivePlayers = players.filter(p => p.is_alive)
-    const mafiaCount = alivePlayers.filter(p => p.role === ROLES.MAFIA).length
-    const citizenCount = alivePlayers.filter(p => 
-      [ROLES.CITIZEN, ROLES.DOCTOR, ROLES.POLICE, ROLES.TERRORIST].includes(p.role)
-    ).length
-
-    if (mafiaCount === 0) {
-      nextPhase = GAME_PHASES.ENDED
-      updateData.winner_team = 'citizen'
-    } else if (mafiaCount >= citizenCount) {
-      nextPhase = GAME_PHASES.ENDED
-      updateData.winner_team = 'mafia'
+    // Determine next phase (without win condition check yet)
+    if (gameState.phase === GAME_PHASES.NIGHT) {
+      nextPhase = GAME_PHASES.DAY
+    } else if (gameState.phase === GAME_PHASES.DAY) {
+      nextPhase = GAME_PHASES.VOTING
+    } else if (gameState.phase === GAME_PHASES.VOTING) {
+      nextPhase = GAME_PHASES.NIGHT
+      updateData.current_round = (gameState.current_round || 1) + 1
     } else {
-      // Continue with normal phase progression
-      if (gameState.phase === GAME_PHASES.NIGHT) {
-        nextPhase = GAME_PHASES.DAY
-      } else if (gameState.phase === GAME_PHASES.DAY) {
-        nextPhase = GAME_PHASES.VOTING
-      } else if (gameState.phase === GAME_PHASES.VOTING) {
-        // Continue to next round
-        nextPhase = GAME_PHASES.NIGHT
-        updateData.current_round = (gameState.current_round || 1) + 1
-      } else {
-        return
-      }
+      return
     }
 
     updateData.phase = nextPhase
@@ -185,20 +169,23 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
         .eq('id', roomId)
     }
 
-    // Process confirmed actions when moving from night to day
-    if (gameState.phase === GAME_PHASES.NIGHT && nextPhase === GAME_PHASES.DAY) {
+    // Process actions and check win conditions after processing
+    if (gameState.phase === GAME_PHASES.NIGHT) {
       const result = await processNightActions()
       if (result?.narration) {
         setNarration(result.narration)
       }
+      // Check win conditions after night actions
+      await checkAndUpdateWinCondition()
     }
 
-    // Process voting when moving from voting phase
-    if (gameState.phase === GAME_PHASES.VOTING && nextPhase !== GAME_PHASES.ENDED) {
+    if (gameState.phase === GAME_PHASES.VOTING) {
       const result = await processVoting()
       if (result?.narration) {
         setNarration(result.narration)
       }
+      // Check win conditions after voting
+      await checkAndUpdateWinCondition()
     }
   }
 
@@ -298,6 +285,47 @@ export default function GodDashboard({ playerId, roomId, gameState, players, act
       killedPlayers,
       protectedPlayers,
       terroristActed
+    }
+  }
+
+  async function checkAndUpdateWinCondition() {
+    // Get fresh player data from database
+    const { data: updatedPlayers } = await supabase
+      .from('players')
+      .select('*')
+      .eq('room_id', roomId)
+
+    if (!updatedPlayers) return
+
+    const alivePlayers = updatedPlayers.filter(p => p.is_alive)
+    const mafiaCount = alivePlayers.filter(p => p.role === ROLES.MAFIA).length
+    const citizenCount = alivePlayers.filter(p => 
+      [ROLES.CITIZEN, ROLES.DOCTOR, ROLES.POLICE, ROLES.TERRORIST].includes(p.role)
+    ).length
+
+    let winner = null
+    if (mafiaCount === 0) {
+      winner = 'citizen'
+    } else if (mafiaCount >= citizenCount) {
+      winner = 'mafia'
+    }
+
+    if (winner) {
+      try {
+        await supabase
+          .from('games')
+          .update({ 
+            phase: GAME_PHASES.ENDED,
+            winner_team: winner
+          })
+          .eq('id', roomId)
+      } catch (error) {
+        // Fallback for databases without winner_team column
+        await supabase
+          .from('games')
+          .update({ phase: GAME_PHASES.ENDED })
+          .eq('id', roomId)
+      }
     }
   }
 
